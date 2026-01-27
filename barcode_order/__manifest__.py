@@ -15,7 +15,7 @@ Long description of module's purpose
     'category': 'Uncategorized',
     'version': '0.1',
 
-    'depends': ['stock_barcode'],
+    'depends': ['stock_barcode','sale_customs_extend'],
 
     'data': [
         # 'security/ir.model.access.csv',
@@ -24,8 +24,9 @@ Long description of module's purpose
    
     "assets":{
         "web.assets_backend":[
+            "barcode_order/static/src/css/barcode.css",
             "barcode_order/static/src/xml/barcode.xml",
-            "barcode_order/static/src/js/barcode.js"
+            "barcode_order/static/src/js/barcode.js",
         ]
     }
 }

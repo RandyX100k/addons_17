@@ -36,7 +36,7 @@ export class CheckingProduct extends Component {
             const pickings = await this.orm.searchRead(
                 "stock.picking",
                 [["state", "=", "assigned"]],
-                ["id", "name"]
+                ["id", "name", "assigned_id_packing"]
             );
 
             if (!pickings || !pickings.length) {
@@ -64,8 +64,9 @@ export class CheckingProduct extends Component {
             additionalContext: { picking_id: pickingId },
         });
     }
-    
+
 }
+
 export class PickingScanner extends Component {
     static template = "barcoder_order.scan_template";
 
@@ -74,14 +75,20 @@ export class PickingScanner extends Component {
             loading: true,
             pickingId: null,
             scan: "",
-            lastScannedLineId: null, 
+            lastScannedLineId: null,
             lines: [],
             barcodeToIndex: {},
+            clientInfo: {}
         });
 
         this.orm = useService("orm");
         this.notification = useService("notification");
         this.actionService = useService("action");
+
+        this._scanQueue = [];
+        this._draining = false;
+
+        this._writeByLine = new Map();
 
         onWillStart(async () => {
             const ctx = this.props?.action?.context || {};
@@ -104,9 +111,16 @@ export class PickingScanner extends Component {
             const picking = await this.orm.read(
                 "stock.picking",
                 [this.state.pickingId],
-                ["name", "move_line_ids"]
+                ["name", "move_line_ids", "partner_id", "assigned_id_packing"]
             );
+
             const lineIds = picking?.[0]?.move_line_ids || [];
+
+            this.state.clientInfo = {
+                client: picking[0].partner_id[1],
+                assigned_id_packing: picking[0].assigned_id_packing[1] ? picking[0].assigned_id_packing[1] : 'no tiene'
+
+            }
 
             if (!lineIds.length) {
                 this.state.lines = [];
@@ -185,46 +199,71 @@ export class PickingScanner extends Component {
     onKeyDown(ev) {
         if (ev.key === "Enter") {
             ev.preventDefault();
-            this.processScan();
+
+            const code = (this.state.scan || "").trim();
+            this.state.scan = "";
+            if (!code) return;
+
+            this.enqueueScan(code);
         }
     }
 
-    async processScan() {
-        const code = (this.state.scan || "").trim();
-        if (!code) return;
+    enqueueScan(code) {
+        this._scanQueue.push(code);
+        this.drainQueue();
+    }
 
+    async drainQueue() {
+        if (this._draining) return;
+        this._draining = true;
+
+        try {
+            while (this._scanQueue.length) {
+                const code = this._scanQueue.shift();
+                await this.handleOneScan(code);
+            }
+        } finally {
+            this._draining = false;
+        }
+    }
+
+    async handleOneScan(code) {
         const idx = this.state.barcodeToIndex[code];
 
         if (idx === undefined) {
             this.notification.add(`Ese barcode no está en el picking: ${code}`, { type: "danger" });
-            this.state.scan = "";
             return;
         }
 
         const line = this.state.lines[idx];
-
         this.state.lastScannedLineId = line.line_id;
 
         if (line.done) {
             this.notification.add(`Ya está completo: ${line.product_name}`, { type: "warning" });
-            this.state.scan = "";
             return;
         }
 
         const newQty = (line.scanned_qty || 0) + 1;
 
         line.scanned_qty = newQty;
-        line.manual_qty = newQty; 
+        line.manual_qty = newQty;
         line.done = line.required_qty > 0 && newQty >= line.required_qty;
 
-        try {
-            await this.orm.write("stock.move.line", [line.line_id], { qty_done: newQty });
-        } catch (e) {
+        this.queueWriteQtyDone(line.line_id, newQty).catch((e) => {
             console.error(e);
             this.notification.add("No pude guardar qty_done.", { type: "danger" });
-        }
+        });
+    }
 
-        this.state.scan = "";
+    queueWriteQtyDone(lineId, qty) {
+        const prev = this._writeByLine.get(lineId) || Promise.resolve();
+
+        const next = prev.then(() => {
+            return this.orm.write("stock.move.line", [lineId], { qty_done: qty });
+        });
+
+        this._writeByLine.set(lineId, next.catch(() => { }));
+        return next;
     }
 
     toggleEdit(lineId) {
@@ -255,11 +294,10 @@ export class PickingScanner extends Component {
         line.scanned_qty = qty;
         line.done = line.required_qty > 0 && qty >= line.required_qty;
         line.editing = false;
-
         this.state.lastScannedLineId = line.line_id;
 
         try {
-            await this.orm.write("stock.move.line", [line.line_id], { qty_done: qty });
+            await this.queueWriteQtyDone(line.line_id, qty);
             this.notification.add("Cantidad actualizada.", { type: "success" });
         } catch (e) {
             console.error(e);
@@ -271,7 +309,6 @@ export class PickingScanner extends Component {
         this.actionService.doAction("barcode_order.barcoder_order_tag_action");
     }
 }
-
 
 
 registry.category("actions").add("barcode_order.component", CheckingProduct);

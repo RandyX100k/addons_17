@@ -1,0 +1,13 @@
+.info-cliente{
+    display: flex;
+    flex-direction: column; 
+    gap: 4px;
+}
+
+    
+.assigned{
+    background-color: blueviolet;
+    padding: 7px;
+    color: #fff;
+    border-radius: 5rem;
+}
