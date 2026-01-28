@@ -3,6 +3,7 @@
 import { Component, onWillStart, useState } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
+import * as BarcodeScanner from '@web/webclient/barcode/barcode_scanner';
 
 export class CheckingProduct extends Component {
     static template = "barcoder_order.template";
@@ -67,6 +68,7 @@ export class CheckingProduct extends Component {
 
 }
 
+
 export class PickingScanner extends Component {
     static template = "barcoder_order.scan_template";
 
@@ -78,12 +80,30 @@ export class PickingScanner extends Component {
             lastScannedLineId: null,
             lines: [],
             barcodeToIndex: {},
-            clientInfo: {}
+            clientInfo: {},
+            addOpen: false,
+            addQuery: "",
+            addResults: [],
+            addSelected: null,
+            addQty: 1,
+            addSaving: false,
+            products: [],
+            addProductId: "",
+            productFilter: "",
+            note: false,
+            noteText: "",
+            noteSaving: false,
+
+
+
+
         });
 
         this.orm = useService("orm");
         this.notification = useService("notification");
         this.actionService = useService("action");
+        this.mobileScanner = BarcodeScanner.isBarcodeScannerSupported();
+
 
         this._scanQueue = [];
         this._draining = false;
@@ -101,6 +121,10 @@ export class PickingScanner extends Component {
             }
 
             await this.loadLines();
+
+            const products = await this.orm.searchRead("product.template", [], ["id", "name"]);
+
+            this.state.products = products;
         });
     }
 
@@ -164,6 +188,7 @@ export class PickingScanner extends Component {
                 return {
                     line_id: l.id,
                     product_id: pid,
+                    move_id: mid,
                     product_name: prod?.name || (l.product_id?.[1] || "Producto"),
                     barcode: prod?.barcode || null,
                     required_qty: required,
@@ -308,6 +333,248 @@ export class PickingScanner extends Component {
     backToList() {
         this.actionService.doAction("barcode_order.barcoder_order_tag_action");
     }
+
+    async Delete(lineId) {
+        const line = this.state.lines.find(l => l.line_id === lineId);
+        if (!line) return;
+
+        const ok = window.confirm(`¿Eliminar el producto del picking?\n${line.product_name}`);
+        if (!ok) return;
+
+        try {
+            if (line.move_id) {
+                const mlIds = await this.orm.search("stock.move.line", [["move_id", "=", line.move_id]]);
+                if (mlIds.length) {
+                    await this.orm.unlink("stock.move.line", mlIds);
+                }
+
+                await this.orm.unlink("stock.move", [line.move_id]);
+            } else {
+                await this.orm.unlink("stock.move.line", [line.line_id]);
+            }
+
+            this.notification.add("Producto eliminado del picking.", { type: "success" });
+
+            await this.loadLines();
+        } catch (e) {
+            console.error(e);
+            this.notification.add("No pude eliminar el producto del picking.", { type: "danger" });
+            await this.loadLines();
+        }
+    }
+
+
+    openAddProduct() {
+        this.state.addOpen = true;
+        this.state.addProductId = "";
+        this.state.addQty = 1;
+        this.state.addSaving = false;
+        this.state.productFilter = "";
+    }
+
+
+    closeAddProduct() {
+        this.state.addOpen = false;
+    }
+
+    async onAddKeydown(ev) {
+        if (ev.key === "Enter") {
+            ev.preventDefault();
+            await this.searchProducts();
+        }
+    }
+
+    async searchProducts() {
+        const q = (this.state.addQuery || "").trim();
+        if (!q) return;
+
+        try {
+            // Busca por barcode exacto O por nombre parecido
+            const domain = ["|", ["barcode", "=", q], ["name", "ilike", q]];
+            const ids = await this.orm.search("product.product", domain, { limit: 20 });
+            if (!ids.length) {
+                this.state.addResults = [];
+                this.notification.add("No encontré productos con ese criterio.", { type: "warning" });
+                return;
+            }
+
+            const prods = await this.orm.read("product.product", ids, ["id", "name", "barcode", "uom_id"]);
+            this.state.addResults = prods;
+        } catch (e) {
+            console.error(e);
+            this.notification.add("Error buscando productos.", { type: "danger" });
+        }
+    }
+
+    selectAddProduct(p) {
+        this.state.addSelected = p;
+        if (!this.state.addQty || this.state.addQty < 1) this.state.addQty = 1;
+    }
+
+
+    async confirmAddProduct() {
+        const templateId = Number(this.state.addProductId);
+        const qty = Number(this.state.addQty);
+
+        if (!templateId) return;
+
+        if (!Number.isFinite(qty) || qty <= 0) {
+            this.notification.add("Cantidad inválida.", { type: "danger" });
+            return;
+        }
+
+        this.state.addSaving = true;
+
+        try {
+            const [pk] = await this.orm.read(
+                "stock.picking",
+                [this.state.pickingId],
+                ["location_id", "location_dest_id", "company_id"]
+            );
+            if (!pk) throw new Error("No pude leer el picking.");
+
+            const productVariantIds = await this.orm.search(
+                "product.product",
+                [["product_tmpl_id", "=", templateId]],
+                { limit: 1 }
+            );
+            if (!productVariantIds.length) {
+                this.notification.add("Ese producto no tiene variante (product.product).", { type: "danger" });
+                return;
+            }
+
+            const [prod] = await this.orm.read(
+                "product.product",
+                productVariantIds,
+                ["id", "display_name", "uom_id"]
+            );
+
+            const uomId = prod?.uom_id?.[0];
+            if (!uomId) throw new Error("El producto no tiene UoM.");
+
+            const createdMove = await this.orm.create("stock.move", [{
+                name: prod.display_name,
+                picking_id: this.state.pickingId,
+                product_id: prod.id,
+                product_uom_qty: qty,
+                product_uom: uomId,
+                location_id: pk.location_id?.[0],
+                location_dest_id: pk.location_dest_id?.[0],
+                company_id: pk.company_id?.[0],
+            }]);
+
+            const moveId = Array.isArray(createdMove) ? createdMove[0] : createdMove;
+
+            if (!moveId) {
+                throw new Error("No pude obtener el ID del movimiento creado.");
+            }
+
+            await this.orm.create("stock.move.line", [{
+                picking_id: this.state.pickingId,
+                move_id: moveId,
+                product_id: prod.id,
+                product_uom_id: uomId,
+                location_id: pk.location_id?.[0],
+                location_dest_id: pk.location_dest_id?.[0],
+                qty_done: 0,
+            }]);
+
+            this.notification.add("Producto agregado al picking.", { type: "success" });
+            this.closeAddProduct();
+            await this.orm.call("stock.picking", "action_confirm", [[this.state.pickingId]]);
+            await this.orm.call("stock.picking", "action_assign", [[this.state.pickingId]]);
+            await this.loadLines();
+        } catch (e) {
+            console.error(e);
+            this.notification.add("No pude agregar el producto al picking.", { type: "danger" });
+        } finally {
+            this.state.addSaving = false;
+        }
+    }
+
+
+    get filteredProducts() {
+        const q = (this.state.productFilter || "").trim().toLowerCase();
+        if (!q) return this.state.products;
+
+        return this.state.products.filter(p => {
+            const name = (p.name || "").toLowerCase();
+            return name.includes(q);
+        });
+    }
+
+    async openMobileScanner() {
+        const barcode = await BarcodeScanner.scanBarcode(this.env);
+      
+        if (barcode) {
+          const code = String(barcode).trim();
+          if (!code) return;
+      
+          this.enqueueScan(code);
+      
+          if ("vibrate" in window.navigator) {
+            window.navigator.vibrate(100);
+          }
+        } else {
+          this.notification.add(_t("Please, Scan again!"), { type: "warning" });
+        }
+      }
+      
+
+    AddNote() {
+        this.state.note = true;
+    }
+
+    closeAddNote() {
+        this.state.note = false;
+        this.state.noteText = "";
+    }
+
+    async ConfirmNote() {
+        const pickingId = this.state.pickingId;
+        const text = (this.state.noteText || "").trim();
+      
+        if (!text) return;
+      
+        try {
+          this.state.noteSaving = true;
+      
+          const escapeHtml = (s) =>
+            s.replace(/&/g, "&amp;")
+             .replace(/</g, "&lt;")
+             .replace(/>/g, "&gt;")
+             .replace(/"/g, "&quot;")
+             .replace(/'/g, "&#039;");
+      
+          const html = `<p>${escapeHtml(text).replace(/\n/g, "<br/>")}</p>`;
+      
+          const [pick] = await this.orm.read("stock.picking", [pickingId], ["note"]);
+          const current = (pick?.note || "").trim();
+      
+          const newNote = current ? `${current}<br/>${html}` : html;
+      
+          await this.orm.write("stock.picking", [pickingId], { note: newNote });
+      
+          await this.orm.call("stock.picking", "message_post", [[pickingId]], {
+            body: html, 
+            message_type: "comment",
+            subtype_xmlid: "mail.mt_comment",
+          });
+      
+          this.notificationService?.add(_t("Nota guardada y enviada al chatter."), { type: "success" });
+          this.closeAddNote();
+        } catch (e) {
+          console.error(e);
+          this.notificationService?.add(_t("No se pudo guardar la nota."), { type: "danger" });
+        } finally {
+          this.state.noteSaving = false;
+        }
+      }
+      
+
+
+
+
 }
 
 

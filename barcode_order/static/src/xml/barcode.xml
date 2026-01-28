@@ -3,7 +3,8 @@
 <templates>
 
     <t t-name="barcoder_order.template">
-        <div class="p-3">
+        <div class="p-3"
+            style="height: 100vh; overflow-y: auto; box-sizing: border-box; padding: 1rem;">
             <h2 class="mb-3">Entregas</h2>
 
             <div class="input-group mb-3">
@@ -48,24 +49,35 @@
 
 
     <t t-name="barcoder_order.scan_template">
-        <div class="p-3">
+        <div class="p-3"
+            style="height: 100vh; overflow-y: auto; box-sizing: border-box; padding: 1rem;">
 
-            <div class="d-flex align-items-center justify-content-between mb-3">
+            <div class="
+            d-flex align-items-center justify-content-between mb-3">
                 <div>
-                    <div class="info-cliente">
-                        <div>Cliente: <t t-esc="state.clientInfo.client" /></div>
-                        <div class="assigned">Asignado a: <t
-                                t-esc="state.clientInfo.assigned_id_packing" /></div>
+                    <div class=" info-cliente">
+                        <div>Cliente: <t t-esc=" state.clientInfo.client" /></div>
+                        <div class=" assigned">Asignado a: <t
+                                t-esc=" state.clientInfo.assigned_id_packing" /></div>
                     </div>
 
-                    <h2 class="mb-0">Escanear productos</h2>
-                    <small class="text-muted">
-                        <t t-out="state.lines.filter(l => l.done).length" /> / <t
+                    <h2 class=" mb-0">Escanear productos</h2>
+                    <small class=" text-muted">
+                        <t t-out=" state.lines.filter(l=>
+            l.done).length" /> / <t
                             t-out="state.lines.length" /> completados </small>
                 </div>
 
-                <button class="btn btn-outline-secondary" t-on-click="backToList">
-                    <i class="fa fa-arrow-left me-1" /> Volver </button>
+                <div class="btns">
+                    <button class="btn btn-outline-secondary" t-on-click="backToList">
+                        <i class="fa fa-arrow-left me-1" /> Volver </button>
+
+                    <button class="btn btn-success" t-on-click="openAddProduct">
+                        <i class="fa fa-plus me-1" /> Agregar </button>
+
+                    <button class="btn btn-success" t-on-click="AddNote">
+                        <i class="fa fa-sheet-plastic me-1" /> Nota </button>
+                </div>
             </div>
 
             <div class="card shadow-sm mb-3">
@@ -90,10 +102,16 @@
                         </button>
 
                         <button class="btn btn-primary"
-                            t-on-click="processScan"
+                            t-on-click="()=> this.processScan()"
                             t-att-disabled="!state.scan">
                             OK
                         </button>
+
+                        <button class="btn btn-outline-secondary"
+                            t-if="mobileScanner"
+                            t-on-click="openMobileScanner">
+                            <i class="fa fa-camera me-1" /> Cámara </button>
+
                     </div>
 
                     <div class="mt-2 small text-muted">
@@ -185,6 +203,13 @@
                                                 t-on-click.prevent="() => this.toggleEdit(l.line_id)"
                                             >
                                                 <i class="fa fa-pencil me-1" /> Editar </button>
+
+                                            <div />
+                                            <br />
+                                            <button class="btn btn-outline-primary btn-sm"
+                                                t-on-click.prevent="() => this.Delete(l.line_id)"
+                                            >
+                                                <i class="fa fa-trash me-1" /> Eliminar </button>
                                         </t>
 
                                         <t t-if="!l.done">
@@ -201,6 +226,99 @@
             </t>
 
         </div>
+
+        <t t-if="state.addOpen">
+            <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,.5);">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+
+                        <div class="modal-header">
+                            <h5 class="modal-title">Agregar producto</h5>
+                            <button type="button" class="btn-close" t-on-click="closeAddProduct" />
+                        </div>
+
+                        <div class="modal-body">
+                            <label class="form-label">Filtrar por nombre</label>
+                            <input class="form-control"
+                                placeholder="Escribe para filtrar…"
+                                t-model="state.productFilter" />
+
+                            <label class="form-label mt-3">Producto</label>
+                            <select class="form-select" size="10" t-model="state.addProductId">
+                                <option value="">-- Selecciona --</option>
+
+                                <t t-foreach="filteredProducts" t-as="p" t-key="p.id">
+                                    <option t-att-value="p.id">
+                                        <t t-esc="p.name" />
+                                    </option>
+                                </t>
+                            </select>
+
+                            <div class="mt-3">
+                                <label class="form-label">Cantidad</label>
+                                <input type="number" min="1" class="form-control"
+                                    t-model="state.addQty" />
+                            </div>
+                        </div>
+
+
+                        <div class="modal-footer">
+                            <button class="btn btn-outline-secondary" t-on-click="closeAddProduct">
+                                Cancelar</button>
+
+                            <button class="btn btn-primary"
+                                t-att-disabled="!state.addProductId || !state.addQty || state.addSaving"
+                                t-on-click="confirmAddProduct">
+                                <t t-if="state.addSaving">
+                                    <i class="fa fa-spinner fa-spin me-1" />
+                                </t>
+                                Agregar </button>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </t>
+
+
+        <t t-if="state.note">
+            <div class="modal d-block" tabindex="-1" style="background: rgba(0,0,0,.5);">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+
+                        <div class="modal-header">
+                            <h5 class="modal-title">Agregar nota</h5>
+                            <button type="button" class="btn-close" t-on-click="closeAddNote" />
+                        </div>
+
+                        <div class="modal-body">
+                            <label class="form-label">Nota</label>
+                            <textarea class="form-control"
+                                rows="3"
+                                placeholder="Escribe la nota…"
+                                t-model="state.noteText" />
+                        </div>
+
+                        <div class="modal-footer">
+                            <button class="btn btn-outline-secondary" t-on-click="closeAddNote">
+                                Cancelar
+                            </button>
+
+                            <button class="btn btn-primary"
+                                t-att-disabled="!state.noteText || state.noteSaving"
+                                t-on-click="ConfirmNote">
+                                <t t-if="state.noteSaving">
+                                    <i class="fa fa-spinner fa-spin me-1" />
+                                </t>
+                                Agregar </button>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </t>
+
+
     </t>
 
 

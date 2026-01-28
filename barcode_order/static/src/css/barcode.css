@@ -1,13 +1,157 @@
-.info-cliente{
-    display: flex;
-    flex-direction: column; 
-    gap: 4px;
+/* =========================
+   FIX RESPONSIVE (sin tocar XML)
+   ========================= */
+
+/* 1) Evita overflow horizontal general dentro de tus pantallas */
+.p-3[style*="height: 100vh"]{
+  overflow-x: hidden !important;
 }
 
-    
+/* 2) Info cliente */
+.info-cliente{
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
 .assigned{
-    background-color: blueviolet;
-    padding: 7px;
-    color: #fff;
-    border-radius: 5rem;
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  background-color: blueviolet;
+  padding: 7px 10px;
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 3) NO uses .btn global para layout: lo neutralizamos SOLO dentro del contenedor de tu vista */
+.p-3[style*="height: 100vh"] .btn{
+  margin-left: 0 !important;
+}
+
+/* 4) Botonera del header */
+.btns{
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.btns .btn{
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+
+/* 5) Títulos no deben desbordar */
+h2, small, .text-muted, .fw-bold{
+  min-width: 0;
+}
+
+/* 6) Evita overflow en cards/lineas */
+.card,
+.card-body,
+.row,
+.col-12{
+  min-width: 0;
+}
+
+/* 7) En móviles: el header se apila (info arriba, botones abajo) */
+@media (max-width: 576px){
+  /* Este selector apunta al header que tienes: d-flex align-items-center justify-content-between mb-3 */
+  .d-flex.align-items-center.justify-content-between.mb-3{
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: .75rem;
+  }
+
+  .d-flex.align-items-center.justify-content-between.mb-3 > div:first-child{
+    width: 100%;
+  }
+
+  .btns{
+    width: 100%;
+  }
+
+  .btns .btn{
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  /* Input-group: apilar */
+  .input-group.input-group-lg{
+    flex-direction: column !important;
+    align-items: stretch;
+    gap: .5rem;
+  }
+
+  .input-group.input-group-lg > .input-group-text,
+  .input-group.input-group-lg > .form-control,
+  .input-group.input-group-lg > .btn{
+    width: 100% !important;
+    border-radius: 12px !important;
+  }
+
+  /* Separación dentro del card */
+  .card-body{
+    padding: .9rem;
+  }
+
+  /* Botones editar/eliminar a ancho completo para no apretar */
+  .text-end[style*="min-width: 170px"]{
+    min-width: 0 !important;
+    width: 45%;
+  }
+
+  .text-end[style*="min-width: 170px"] .btn{
+    width: 100%;
+    margin-top: .35rem;
+  }
+
+  .fw-bold{
+    word-break: break-word;
+  }
+}
+
+@media (min-width: 577px) and (max-width: 991px){
+  .d-flex.align-items-center.justify-content-between.mb-3{
+    flex-wrap: wrap;
+    gap: .75rem;
+  }
+
+  .btns{
+    justify-content: flex-end;
+  }
+}
+
+@media (min-width: 992px){
+  .input-group.input-group-lg{
+    flex-direction: row;
+    gap: 0;
+  }
+
+  .input-group.input-group-lg > .input-group-text{
+    width: auto !important;
+    border-radius: .5rem 0 0 .5rem !important;
+  }
+
+  .input-group.input-group-lg > .form-control{
+    width: 1% !important;
+    border-radius: 0 !important;
+  }
+
+  .input-group.input-group-lg > .btn{
+    width: auto !important;
+    border-radius: 0 !important;
+  }
+
+  .input-group.input-group-lg > .btn:last-child{
+    border-radius: 0 .5rem .5rem 0 !important;
+  }
 }
