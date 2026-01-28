@@ -604,10 +604,10 @@ export class PickingScanner extends Component {
         const pickingId = this.state.pickingId;
         if (!pickingId) return;
 
-        if (!this.allDone) {
-            this.notification.add("Aún hay productos pendientes.", { type: "warning" });
-            return;
-        }
+        // if (!this.allDone) {
+        //     this.notification.add("Aún hay productos pendientes.", { type: "warning" });
+        //     return;
+        // }
 
         if (this.state.doneNotePosted) return;
 
