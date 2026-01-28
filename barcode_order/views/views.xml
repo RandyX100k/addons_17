@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
+    <record id="barcode_order_stock_picking_form" model="ir.ui.view">
+        <field name="name">barcode_order_stock_picking_form</field>
+        <field name="model">stock.picking</field>
+        <field name="inherit_id" ref="stock.vpicktree" />
+        <field name="arch" type="xml">
+            <xpath expr="//tree" position="inside">
+                <field name="note" optional="show" />
+            </xpath>
+        </field>
+    </record>
+
     <record id="barcoder_order_tag_action" model="ir.actions.client">
         <field name="name">barcoder_order_tag_action</field>
         <field name="tag">barcode_order.component</field>
@@ -10,5 +21,6 @@
         <field name="name">Scan Picking</field>
         <field name="tag">barcode_order.scan</field>
     </record>
+
 
 </odoo>

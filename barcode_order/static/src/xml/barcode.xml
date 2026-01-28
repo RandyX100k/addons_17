@@ -75,8 +75,9 @@
                     <button class="btn btn-success" t-on-click="openAddProduct">
                         <i class="fa fa-plus me-1" /> Agregar </button>
 
-                    <button class="btn btn-success" t-on-click="AddNote">
+                    <button class="btn btn-success" t-on-click="addAutoDoneNote">
                         <i class="fa fa-sheet-plastic me-1" /> Nota </button>
+
                 </div>
             </div>
 
