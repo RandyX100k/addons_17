@@ -91,6 +91,7 @@
 
                         <input class="form-control"
                             autofocus="autofocus"
+                            t-ref="inputScan"
                             placeholder="Escanea o escribe y presiona Enter…"
                             t-model="state.scan"
                             t-on-keydown="onKeyDown" />

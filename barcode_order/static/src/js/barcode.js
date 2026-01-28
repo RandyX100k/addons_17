@@ -1,6 +1,6 @@
 /** @odoo-module **/
 
-import { Component, onWillStart, useState } from "@odoo/owl";
+import { Component, onWillStart, useRef, useState  } from "@odoo/owl";
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
 import * as BarcodeScanner from '@web/webclient/barcode/barcode_scanner';
@@ -21,6 +21,7 @@ export class CheckingProduct extends Component {
                 );
             },
         });
+        this.inputScan = useRef("inputScan");
 
         this.orm = useService("orm");
         this.notification = useService("notification");
@@ -29,6 +30,8 @@ export class CheckingProduct extends Component {
         onWillStart(async () => {
             await this.loadPickings();
         });
+
+       
     }
 
     async loadPickings() {
@@ -104,7 +107,6 @@ export class PickingScanner extends Component {
         this.actionService = useService("action");
         this.mobileScanner = BarcodeScanner.isBarcodeScannerSupported();
 
-
         this._scanQueue = [];
         this._draining = false;
 
@@ -122,8 +124,7 @@ export class PickingScanner extends Component {
 
             await this.loadLines();
 
-            const products = await this.orm.searchRead("product.template", [], ["id", "name"]);
-
+            const products = await this.orm.searchRead("product.template", [], ["id", "name","barcode"]);
             this.state.products = products;
         });
     }
@@ -327,11 +328,14 @@ export class PickingScanner extends Component {
         } catch (e) {
             console.error(e);
             this.notification.add("No pude guardar la cantidad.", { type: "danger" });
+        } finally {
+            this.inputScan.el?.focus();
         }
     }
 
     backToList() {
         this.actionService.doAction("barcode_order.barcoder_order_tag_action");
+        this.inputScan.el?.focus();
     }
 
     async Delete(lineId) {
@@ -360,6 +364,8 @@ export class PickingScanner extends Component {
             console.error(e);
             this.notification.add("No pude eliminar el producto del picking.", { type: "danger" });
             await this.loadLines();
+        }finally{
+            this.inputScan.el?.focus();
         }
     }
 
@@ -389,7 +395,7 @@ export class PickingScanner extends Component {
         if (!q) return;
 
         try {
-            // Busca por barcode exacto O por nombre parecido
+     
             const domain = ["|", ["barcode", "=", q], ["name", "ilike", q]];
             const ids = await this.orm.search("product.product", domain, { limit: 20 });
             if (!ids.length) {
@@ -496,30 +502,52 @@ export class PickingScanner extends Component {
     get filteredProducts() {
         const q = (this.state.productFilter || "").trim().toLowerCase();
         if (!q) return this.state.products;
-
+      
         return this.state.products.filter(p => {
-            const name = (p.name || "").toLowerCase();
-            return name.includes(q);
+          const name = (p.name || "").toLowerCase();
+          const barcode = String(p.barcode || "").toLowerCase();
+          return name.includes(q) || barcode.includes(q);
         });
-    }
-
-    async openMobileScanner() {
-        const barcode = await BarcodeScanner.scanBarcode(this.env);
-      
-        if (barcode) {
-          const code = String(barcode).trim();
-          if (!code) return;
-      
-          this.enqueueScan(code);
-      
-          if ("vibrate" in window.navigator) {
-            window.navigator.vibrate(100);
-          }
-        } else {
-          this.notification.add(_t("Please, Scan again!"), { type: "warning" });
-        }
       }
       
+
+      _delay(ms) {
+        return new Promise((r) => setTimeout(r, ms));
+      }
+      
+      async openMobileScanner() {
+        const minMs = 3000;  
+        const maxTries = 5;
+      
+        for (let i = 0; i < maxTries; i++) {
+          const start = Date.now();
+          const barcode = await BarcodeScanner.scanBarcode(this.env);
+      
+          if (!barcode) {
+            this.notification.add("Please, Scan again!"), { type: "warning" };
+            return;
+          }
+      
+          const elapsed = Date.now() - start;
+      
+          if (elapsed < minMs) {
+            await this._delay(minMs - elapsed);
+            this.notification.add("Espera un momento y vuelve a apuntar…"), { type: "info" };
+            continue;
+          }
+      
+          const code = String(barcode).trim();
+          if (!code) continue;
+      
+          this.enqueueScan(code);
+          if ("vibrate" in window.navigator) window.navigator.vibrate(100);
+          return;
+        }
+      
+        this.notification.add("No pude leer un código válido."), { type: "danger" };
+      }
+      
+
 
     AddNote() {
         this.state.note = true;
@@ -533,44 +561,44 @@ export class PickingScanner extends Component {
     async ConfirmNote() {
         const pickingId = this.state.pickingId;
         const text = (this.state.noteText || "").trim();
-      
+
         if (!text) return;
-      
+
         try {
-          this.state.noteSaving = true;
-      
-          const escapeHtml = (s) =>
-            s.replace(/&/g, "&amp;")
-             .replace(/</g, "&lt;")
-             .replace(/>/g, "&gt;")
-             .replace(/"/g, "&quot;")
-             .replace(/'/g, "&#039;");
-      
-          const html = `<p>${escapeHtml(text).replace(/\n/g, "<br/>")}</p>`;
-      
-          const [pick] = await this.orm.read("stock.picking", [pickingId], ["note"]);
-          const current = (pick?.note || "").trim();
-      
-          const newNote = current ? `${current}<br/>${html}` : html;
-      
-          await this.orm.write("stock.picking", [pickingId], { note: newNote });
-      
-          await this.orm.call("stock.picking", "message_post", [[pickingId]], {
-            body: html, 
-            message_type: "comment",
-            subtype_xmlid: "mail.mt_comment",
-          });
-      
-          this.notificationService?.add(_t("Nota guardada y enviada al chatter."), { type: "success" });
-          this.closeAddNote();
+            this.state.noteSaving = true;
+
+            const escapeHtml = (s) =>
+                s.replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#039;");
+
+            const html = `<p>${escapeHtml(text).replace(/\n/g, "<br/>")}</p>`;
+
+            const [pick] = await this.orm.read("stock.picking", [pickingId], ["note"]);
+            const current = (pick?.note || "").trim();
+
+            const newNote = current ? `${current}<br/>${html}` : html;
+
+            await this.orm.write("stock.picking", [pickingId], { note: newNote });
+
+            await this.orm.call("stock.picking", "message_post", [[pickingId]], {
+                body: html,
+                message_type: "comment",
+                subtype_xmlid: "mail.mt_comment",
+            });
+
+            this.notificationService?.add(_t("Nota guardada y enviada al chatter."), { type: "success" });
+            this.closeAddNote();
         } catch (e) {
-          console.error(e);
-          this.notificationService?.add(_t("No se pudo guardar la nota."), { type: "danger" });
+            console.error(e);
+            this.notificationService?.add(_t("No se pudo guardar la nota."), { type: "danger" });
         } finally {
-          this.state.noteSaving = false;
+            this.state.noteSaving = false;
         }
-      }
-      
+    }
+
 
 
 
