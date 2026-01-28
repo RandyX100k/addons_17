@@ -21,7 +21,6 @@ export class CheckingProduct extends Component {
                 );
             },
         });
-        this.inputScan = useRef("inputScan");
 
         this.orm = useService("orm");
         this.notification = useService("notification");
@@ -109,6 +108,8 @@ export class PickingScanner extends Component {
 
         this._scanQueue = [];
         this._draining = false;
+        this.inputScan = useRef("inputScan");
+
 
         this._writeByLine = new Map();
 
